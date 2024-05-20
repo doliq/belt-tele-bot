@@ -3,6 +3,7 @@ from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, filters, ContextTypes
 import emoji
 
+# Token dan username bot
 TOKEN: Final = '6862559344:AAHYZG_2VSnYsdyArs62WogXHRLLQxdBMkw'
 BOT_USERNAME: Final = '@yoursafetybelt_teddyBot'
 
@@ -96,7 +97,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Apa yang dapat kami bantu?')
     await update.message.reply_text('Jika bantuan ini kurang membantu anda dapat menghubungi kontak berikut: (No.Telp) ')
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     app = Application.builder().token(TOKEN).build()
 
     # ConversationHandler for registration
