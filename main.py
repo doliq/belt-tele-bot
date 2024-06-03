@@ -10,7 +10,7 @@ TOKEN: Final = '6862559344:AAHYZG_2VSnYsdyArs62WogXHRLLQxdBMkw'
 BOT_USERNAME: Final = '@yoursafetybelt_teddyBot'
 
 # Define stages
-NAME, CHILD_NAME, RELATIONSHIP, ID_SABUK, GENDER, CONFIRM, EDIT_CHOICE, CONNECT  = range(8)
+NAME, CHILD_NAME, RELATIONSHIP, ID_SABUK, GENDER, CONFIRM, EDIT_CHOICE, CONNECT, MY_ACCOUNT = range(9)
 
 def save_to_excel(user_data):
     df = pd.DataFrame([user_data])
@@ -219,6 +219,60 @@ async def connect_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Lanjutkan ke langkah berikutnya atau akhiri percakapan
     return ConversationHandler.END
 
+async def contacts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    contact_list = (
+        "Daftar Kontak Darurat:\n\n"
+        "(0341) 341418 - Instalasi Gawat Darurat Rumah Sakit Panti Waluya Sawahan Malang\n"
+        "(0341) 4372409 - IGD RS Universitas Brawijaya\n"
+        "(0341) 551356 - RSI UNISMA\n"
+        "(0341) 754338 - RSUD KOTA MALANG\n"
+        "(0341) 470805 - Rumah Sakit (RS) PTP XXIV - XXV Lavelette Malang\n"
+    )
+    await update.message.reply_text(contact_list)
+
+async def my_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_data = context.user_data
+    if not user_data:
+        await update.message.reply_text("Anda belum terdaftar. Silakan daftar terlebih dahulu dengan perintah /register.")
+        return ConversationHandler.END
+    
+    biodata = (f"--- Detail Akun Anda ---\n"
+            f"Nama Anda: {user_data['name']}\n"
+            f"Nama buah hati: {user_data['child_name']}\n"
+            f"ID Sabuk: {user_data['id_sabuk']}\n"
+            f"Hubungan: {user_data['relationship']}\n"
+            f"Jenis kelamin: {user_data['gender']}\n\n"
+            "Apakah Anda ingin mengedit detail akun Anda?")
+
+    keyboard = [
+        [InlineKeyboardButton("Edit", callback_data='edit')],
+        [InlineKeyboardButton("Kembali", callback_data='kembali')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(biodata, reply_markup=reply_markup)
+    return MY_ACCOUNT
+
+async def my_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == 'edit':
+        keyboard = [
+            [InlineKeyboardButton("Nama Anda", callback_data='edit_name')],
+            [InlineKeyboardButton("Nama buah hati", callback_data='edit_child_name')],
+            [InlineKeyboardButton("Hubungan", callback_data='edit_relationship')],
+            [InlineKeyboardButton("ID Sabuk", callback_data='edit_id_sabuk')],
+            [InlineKeyboardButton("Jenis kelamin", callback_data='edit_gender')],
+            [InlineKeyboardButton("Batal", callback_data='batal')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text="Bagian mana yang ingin Anda edit?", reply_markup=reply_markup)
+        return EDIT_CHOICE
+    elif query.data == 'kembali':
+        await query.edit_message_text(text="Kembali ke menu utama.")
+        return ConversationHandler.END
+
 if __name__ == '__main__':
     app = Application.builder().token(TOKEN).build()
 
@@ -240,6 +294,7 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('connect', connect_command))
+    app.add_handler(CommandHandler('contactlist', contacts_command))
     app.add_handler(conv_handler)
 
     print('Polling...')
