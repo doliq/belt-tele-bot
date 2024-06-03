@@ -1,5 +1,5 @@
 from typing import Final
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, CallbackQueryHandler, filters, ContextTypes
 import emoji
 import os
@@ -273,6 +273,20 @@ async def my_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(text="Kembali ke menu utama.")
         return ConversationHandler.END
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pdf_path = 'C:\\fall-detect\\help_document.pdf'
+
+    try:
+        with open(pdf_path, 'rb') as pdf_file:
+            await update.message.reply_document(
+                document=InputFile(pdf_file, filename='help_document.pdf'),
+                caption='Silakan unduh dokumen bantuan berikut.\n\nJika ada pertanyaan lebih lanjut, dapat menghubungi nomor/user berikut: (+62) 8000 0000 0000 / @dadwsa'
+            )
+    except FileNotFoundError:
+        await update.message.reply_text("Dokumen bantuan tidak ditemukan.")
+    except Exception as e:
+        await update.message.reply_text(f"Terjadi kesalahan: {str(e)}")
+
 if __name__ == '__main__':
     app = Application.builder().token(TOKEN).build()
 
@@ -287,7 +301,8 @@ if __name__ == '__main__':
             GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gender_received)],
             CONFIRM: [CallbackQueryHandler(confirm_handler, pattern='^(setuju|edit|batalkan)$')],
             EDIT_CHOICE: [CallbackQueryHandler(edit_choice_handler, pattern='^(edit_name|edit_child_name|edit_relationship|edit_id_sabuk|edit_gender|batal|cancel)$')],
-            CONNECT: [CallbackQueryHandler(connect_handler)]  # Tambahkan handler untuk CONNECT state
+            CONNECT: [CallbackQueryHandler(connect_handler)],
+            MY_ACCOUNT: [CallbackQueryHandler(my_account_handler, pattern='^(edit|kembali)$')],
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
@@ -295,6 +310,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('connect', connect_command))
     app.add_handler(CommandHandler('contactlist', contacts_command))
+    app.add_handler(CommandHandler('myaccount', my_account_command))
+    app.add_handler(CommandHandler('help', help_command))
     app.add_handler(conv_handler)
 
     print('Polling...')
