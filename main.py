@@ -93,7 +93,7 @@ async def id_sabuk_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CONFIRM
     reply_keyboard = [['Laki-laki', 'Perempuan']]
     await update.message.reply_text(
-        "Jenis kelamin Anda?",
+        "Jenis kelamin Anak?",
         reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
     )
     return GENDER
@@ -172,7 +172,7 @@ async def edit_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif query.data == 'edit_gender':
         reply_keyboard = [['Laki-laki', 'Perempuan']]
         await query.message.reply_text(
-            text="Jenis kelamin Anda?",
+            text="Jenis kelamin Anak?",
             reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
         )
         return GENDER
@@ -219,16 +219,16 @@ async def connect_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Lanjutkan ke langkah berikutnya atau akhiri percakapan
     return ConversationHandler.END
 
-async def contacts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def contactlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact_list = (
-        "Daftar Kontak Darurat:\n\n"
-        "(0341) 341418 - Instalasi Gawat Darurat Rumah Sakit Panti Waluya Sawahan Malang\n"
-        "(0341) 4372409 - IGD RS Universitas Brawijaya\n"
-        "(0341) 551356 - RSI UNISMA\n"
-        "(0341) 754338 - RSUD KOTA MALANG\n"
-        "(0341) 470805 - Rumah Sakit (RS) PTP XXIV - XXV Lavelette Malang\n"
+        'Daftar Kontak Darurat:\n'
+        '<a href="tel:+0341341418">(0341) 341418</a> - Instalasi Gawat Darurat Rumah Sakit Panti Waluya Sawahan Malang\n'
+        '<a href="tel:+03414372409">(0341) 4372409</a> - IGD RS Universitas Brawijaya\n'
+        '<a href="tel:+0341551356">(0341) 551356</a> - RSI UNISMA\n'
+        '<a href="tel:+0341754338">(0341) 754338</a> - RSUD KOTA MALANG\n'
+        '<a href="tel:+0341470805">(0341) 470805</a> - Rumah Sakit (RS) PTP XXIV - XXV Lavelette Malang'
     )
-    await update.message.reply_text(contact_list)
+    await update.message.reply_text(contact_list, parse_mode='HTML')
 
 async def my_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data
@@ -245,7 +245,11 @@ async def my_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "Apakah Anda ingin mengedit detail akun Anda?")
 
     keyboard = [
-        [InlineKeyboardButton("Edit", callback_data='edit')],
+        [InlineKeyboardButton("Nama Anda", callback_data='edit_name')],
+        [InlineKeyboardButton("Nama buah hati", callback_data='edit_child_name')],
+        [InlineKeyboardButton("Hubungan", callback_data='edit_relationship')],
+        [InlineKeyboardButton("ID Sabuk", callback_data='edit_id_sabuk')],
+        [InlineKeyboardButton("Jenis kelamin", callback_data='edit_gender')],
         [InlineKeyboardButton("Kembali", callback_data='kembali')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -257,17 +261,9 @@ async def my_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     
-    if query.data == 'edit':
-        keyboard = [
-            [InlineKeyboardButton("Nama Anda", callback_data='edit_name')],
-            [InlineKeyboardButton("Nama buah hati", callback_data='edit_child_name')],
-            [InlineKeyboardButton("Hubungan", callback_data='edit_relationship')],
-            [InlineKeyboardButton("ID Sabuk", callback_data='edit_id_sabuk')],
-            [InlineKeyboardButton("Jenis kelamin", callback_data='edit_gender')],
-            [InlineKeyboardButton("Batal", callback_data='batal')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text="Bagian mana yang ingin Anda edit?", reply_markup=reply_markup)
+    if query.data in ['edit_name', 'edit_child_name', 'edit_relationship', 'edit_id_sabuk', 'edit_gender']:
+        context.user_data['edit_mode'] = True
+        await query.edit_message_text(text=f"Silakan masukkan {query.data.replace('edit_', '').replace('_', ' ')} baru:")
         return EDIT_CHOICE
     elif query.data == 'kembali':
         await query.edit_message_text(text="Kembali ke menu utama.")
@@ -280,7 +276,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(pdf_path, 'rb') as pdf_file:
             await update.message.reply_document(
                 document=InputFile(pdf_file, filename='help_document.pdf'),
-                caption='Silakan unduh dokumen bantuan berikut.\n\nJika ada pertanyaan lebih lanjut, dapat menghubungi nomor/user berikut: (+62) 8000 0000 0000 / @dadwsa'
+                caption='Silakan unduh dokumen bantuan berikut.\n\nJika ada pertanyaan lebih lanjut, dapat menghubungi nomor/user berikut: (+62) 822 5358 7972 / @diwaoliq'
             )
     except FileNotFoundError:
         await update.message.reply_text("Dokumen bantuan tidak ditemukan.")
@@ -309,7 +305,7 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('connect', connect_command))
-    app.add_handler(CommandHandler('contactlist', contacts_command))
+    app.add_handler(CommandHandler('contactlist', contactlist_command)) 
     app.add_handler(CommandHandler('myaccount', my_account_command))
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(conv_handler)
