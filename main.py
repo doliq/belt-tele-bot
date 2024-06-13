@@ -2,38 +2,29 @@ from typing import Final
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, ReplyKeyboardRemove, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, ConversationHandler, CallbackQueryHandler, filters, ContextTypes
 import emoji
-import os
-import pandas as pd
+import firebase_admin
+from firebase_admin import credentials, db
 
 # Token dan username bot
 TOKEN: Final = '6862559344:AAHYZG_2VSnYsdyArs62WogXHRLLQxdBMkw'
 BOT_USERNAME: Final = '@yoursafetybelt_teddyBot'
 
-# Define stages
-NAME, CHILD_NAME, RELATIONSHIP, ID_SABUK, GENDER, CONFIRM, EDIT_CHOICE, CONNECT, MY_ACCOUNT = range(9)
+# Inisialisasi Firebase Admin SDK
+cred = credentials.Certificate('./credentials/firebase_admin_sdk.json') 
+firebase_admin.initialize_app(cred, {
+    'databaseURL': 'https://belt-tele-bot-641ab-default-rtdb.asia-southeast1.firebasedatabase.app/'  
+})
 
-def save_to_excel(user_data):
-    df = pd.DataFrame([user_data])
-    directory = "C:\\fall-detect"  # Ubah ke direktori yang diinginkan
+# Define stages for the ConversationHandler
+NAME, CHILD_NAME, RELATIONSHIP, ID_SABUK, GENDER, CONFIRM, EDIT_CHOICE, CONNECT, MY_ACCOUNT, EMERGENCY = range(10)
 
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-
-    file_path = os.path.join(directory, 'registrations.xlsx')
-
+def save_to_firebase(user_data):
     try:
-        if os.path.exists(file_path):
-            with pd.ExcelWriter(file_path, mode='a', engine='openpyxl', if_sheet_exists='overlay') as writer:
-                if 'Sheet1' in writer.book.sheetnames:
-                    start_row = writer.sheets['Sheet1'].max_row
-                    df.to_excel(writer, index=False, header=False, startrow=start_row)
-                else:
-                    df.to_excel(writer, index=False, header=True)
-        else:
-            df.to_excel(file_path, index=False)
-        print(f'File saved to {file_path}')
+        ref = db.reference('registrations')
+        new_ref = ref.push(user_data)
+        print('Data berhasil disimpan ke Firebase')
     except Exception as e:
-        print(f'Error saving file: {e}')
+        print(f'Error saving to Firebase: {e}')
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Halo! Selamat datang di layanan kami ' + emoji.emojize(':grinning_face_with_big_eyes:'))
@@ -101,17 +92,28 @@ async def id_sabuk_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def gender_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     gender = update.message.text
     context.user_data['gender'] = gender
+    await update.message.reply_text('Nomor kontak darurat Anda (opsional, jika tidak ada isi "0")?')
+    return EMERGENCY
+
+async def emergency_contact_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    emergency_contact = update.message.text.strip()
+    if emergency_contact and not emergency_contact.isdigit():
+        await update.message.reply_text('Nomor kontak darurat harus berupa angka jika diisi. Silakan masukkan nomor yang valid atau biarkan kosong.')
+        return EMERGENCY
+    context.user_data['emergency_contact'] = emergency_contact
     await show_confirmation(update, context)
     return CONFIRM
 
 async def show_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data
+    emergency_contact = user_data.get('emergency_contact', 'Tidak ada')
     biodata = (f"--- Berikut Biodata Anda ---\n"
             f"Nama Anda: {user_data['name']}\n"
             f"Nama buah hati: {user_data['child_name']}\n"
             f"ID Sabuk: {user_data['id_sabuk']}\n"
             f"Hubungan: {user_data['relationship']}\n"
-            f"Jenis kelamin: {user_data['gender']}\n\n"
+            f"Jenis kelamin: {user_data['gender']}\n"
+            f"Kontak darurat: {emergency_contact}\n\n"
             "Apakah Anda ingin menyimpan biodata ini?")
 
     keyboard = [
@@ -128,7 +130,7 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == 'setuju':
-        save_to_excel(context.user_data)
+        save_to_firebase(context.user_data)
         await query.edit_message_text(text="Biodata Anda telah disimpan. Terima kasih! " + emoji.emojize(':grinning_face_with_big_eyes:'))
         return ConversationHandler.END
     elif query.data == 'edit':
@@ -138,6 +140,7 @@ async def confirm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("Hubungan", callback_data='edit_relationship')],
             [InlineKeyboardButton("ID Sabuk", callback_data='edit_id_sabuk')],
             [InlineKeyboardButton("Jenis kelamin", callback_data='edit_gender')],
+            [InlineKeyboardButton("Kontak darurat", callback_data='edit_emergency_contact')],
             [InlineKeyboardButton("Batal", callback_data='batal')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -151,7 +154,7 @@ async def edit_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    context.user_data['edit_mode'] = True  # Set edit mode
+    context.user_data['edit_mode'] = True  
 
     if query.data == 'edit_name':
         await query.edit_message_text(text="Nama Anda?")
@@ -176,8 +179,11 @@ async def edit_choice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True)
         )
         return GENDER
+    elif query.data == 'edit_emergency_contact':
+        await query.edit_message_text(text="Nomor kontak darurat Anda (opsional, bisa dikosongkan)?")
+        return EMERGENCY
     elif query.data == 'batal':
-        await show_confirmation(query, context)  # Menampilkan kembali formulir konfirmasi
+        await show_confirmation(query, context)  
         return CONFIRM
     elif query.data == 'cancel':
         await query.edit_message_text(text="Pendaftaran Anda telah dibatalkan.")
@@ -188,42 +194,45 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def connect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Ambil daftar ID sabuk yang telah terdaftar dari file Excel
-    directory = "C:\\fall-detect"
-    file_path = os.path.join(directory, 'registrations.xlsx')
-    if os.path.exists(file_path):
-        df = pd.read_excel(file_path)
-        sabuk_ids = df['id_sabuk'].unique().tolist()
-    else:
-        sabuk_ids = []
-
-    # Buat daftar tombol dengan ID sabuk
-    keyboard = [[InlineKeyboardButton(sabuk_id, callback_data=sabuk_id)] for sabuk_id in sabuk_ids]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(
-        "Silakan pilih ID sabuk yang ingin Anda hubungkan:",
-        reply_markup=reply_markup
-    )
-    return CONNECT
+    try:
+        ref = db.reference('registrations')
+        sabuk_ids = [key for key in ref.get().keys()]
+        if sabuk_ids:
+            keyboard = [[InlineKeyboardButton(sabuk_id, callback_data=sabuk_id)] for sabuk_id in sabuk_ids]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                "Silakan pilih ID sabuk yang ingin Anda hubungkan:",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text("Tidak ada ID sabuk yang terdaftar.")
+        return CONNECT
+    except Exception as e:
+        await update.message.reply_text(f"Terjadi kesalahan: {str(e)}")
 
 async def connect_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    chosen_id = query.data
-    # Lakukan sesuatu dengan ID sabuk yang dipilih, misalnya menyimpan ke context.user_data atau memproses lebih lanjut
-    context.user_data['chosen_id'] = chosen_id
-    await query.edit_message_text(text=f"Anda telah menghubungkan dengan ID sabuk: {chosen_id}")
-    
-    # Lanjutkan ke langkah berikutnya atau akhiri percakapan
+    try:
+        query = update.callback_query
+        await query.answer()
+
+        chosen_id = query.data
+        context.user_data['chosen_id'] = chosen_id
+
+        # Edit pesan asli dan kirim balasan tambahan
+        await query.edit_message_text(text=f"Anda telah menghubungkan dengan ID sabuk: {chosen_id}")
+        
+        # Menggunakan objek asli dari query.message untuk mengirim pesan tambahan
+        await query.message.reply_text("Koneksi berhasil dilakukan! " + emoji.emojize(':thumbs_up:'))
+    except Exception as e:
+        await query.message.reply_text(f"Terjadi kesalahan: {str(e)}")
+
     return ConversationHandler.END
 
 async def contactlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact_list = (
         'Daftar Kontak Darurat:\n'
         '<a href="tel:+0341341418">(0341) 341418</a> - Instalasi Gawat Darurat Rumah Sakit Panti Waluya Sawahan Malang\n'
-        '<a href="tel:+03414372409">(0341) 4372409</a> - IGD RS Universitas Brawijaya\n'
+        '<a href="tel:+03414372409">(0341) 4372409)</a> - IGD RS Universitas Brawijaya\n'
         '<a href="tel:+0341551356">(0341) 551356</a> - RSI UNISMA\n'
         '<a href="tel:+0341754338">(0341) 754338</a> - RSUD KOTA MALANG\n'
         '<a href="tel:+0341470805">(0341) 470805</a> - Rumah Sakit (RS) PTP XXIV - XXV Lavelette Malang'
@@ -232,36 +241,47 @@ async def contactlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def my_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data
-    if not user_data:
+    if not user_data.get('id_sabuk'):
         await update.message.reply_text("Anda belum terdaftar. Silakan daftar terlebih dahulu dengan perintah /register.")
         return ConversationHandler.END
     
-    biodata = (f"--- Detail Akun Anda ---\n"
-            f"Nama Anda: {user_data['name']}\n"
-            f"Nama buah hati: {user_data['child_name']}\n"
-            f"ID Sabuk: {user_data['id_sabuk']}\n"
-            f"Hubungan: {user_data['relationship']}\n"
-            f"Jenis kelamin: {user_data['gender']}\n\n"
-            "Apakah Anda ingin mengedit detail akun Anda?")
+    try:
+        ref = db.reference(f'registrations/{user_data["id_sabuk"]}')
+        user_data = ref.get()
+        if not user_data:
+            await update.message.reply_text("Data tidak ditemukan.")
+            return ConversationHandler.END
+        
+        biodata = (f"--- Detail Akun Anda ---\n"
+                f"Nama Anda: {user_data['name']}\n"
+                f"Nama buah hati: {user_data['child_name']}\n"
+                f"ID Sabuk: {user_data['id_sabuk']}\n"
+                f"Hubungan: {user_data['relationship']}\n"
+                f"Jenis kelamin: {user_data['gender']}\n"
+                f"Kontak darurat: {user_data.get('emergency_contact', 'Tidak ada')}\n\n"
+                "Apakah Anda ingin mengedit detail akun Anda?")
+        
+        keyboard = [
+            [InlineKeyboardButton("Nama Anda", callback_data='edit_name')],
+            [InlineKeyboardButton("Nama buah hati", callback_data='edit_child_name')],
+            [InlineKeyboardButton("Hubungan", callback_data='edit_relationship')],
+            [InlineKeyboardButton("ID Sabuk", callback_data='edit_id_sabuk')],
+            [InlineKeyboardButton("Jenis kelamin", callback_data='edit_gender')],
+            [InlineKeyboardButton("Kontak darurat", callback_data='edit_emergency_contact')],
+            [InlineKeyboardButton("Kembali", callback_data='kembali')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    keyboard = [
-        [InlineKeyboardButton("Nama Anda", callback_data='edit_name')],
-        [InlineKeyboardButton("Nama buah hati", callback_data='edit_child_name')],
-        [InlineKeyboardButton("Hubungan", callback_data='edit_relationship')],
-        [InlineKeyboardButton("ID Sabuk", callback_data='edit_id_sabuk')],
-        [InlineKeyboardButton("Jenis kelamin", callback_data='edit_gender')],
-        [InlineKeyboardButton("Kembali", callback_data='kembali')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    await update.message.reply_text(biodata, reply_markup=reply_markup)
-    return MY_ACCOUNT
+        await update.message.reply_text(biodata, reply_markup=reply_markup)
+        return MY_ACCOUNT
+    except Exception as e:
+        await update.message.reply_text(f"Terjadi kesalahan: {str(e)}")
 
 async def my_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    if query.data in ['edit_name', 'edit_child_name', 'edit_relationship', 'edit_id_sabuk', 'edit_gender']:
+    if query.data in ['edit_name', 'edit_child_name', 'edit_relationship', 'edit_id_sabuk', 'edit_gender', 'edit_emergency_contact']:
         context.user_data['edit_mode'] = True
         await query.edit_message_text(text=f"Silakan masukkan {query.data.replace('edit_', '').replace('_', ' ')} baru:")
         return EDIT_CHOICE
@@ -270,7 +290,7 @@ async def my_account_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    pdf_path = 'C:\\fall-detect\\help_document.pdf'
+    pdf_path = 'C:\\falldetect\\belt-tele-bot\\help_document.pdf'
 
     try:
         with open(pdf_path, 'rb') as pdf_file:
@@ -295,17 +315,19 @@ if __name__ == '__main__':
             RELATIONSHIP: [MessageHandler(filters.TEXT & ~filters.COMMAND, relationship_received)],
             ID_SABUK: [MessageHandler(filters.TEXT & ~filters.COMMAND, id_sabuk_received)],
             GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, gender_received)],
+            EMERGENCY: [MessageHandler(filters.TEXT & ~filters.COMMAND, emergency_contact_received)],
             CONFIRM: [CallbackQueryHandler(confirm_handler, pattern='^(setuju|edit|batalkan)$')],
-            EDIT_CHOICE: [CallbackQueryHandler(edit_choice_handler, pattern='^(edit_name|edit_child_name|edit_relationship|edit_id_sabuk|edit_gender|batal|cancel)$')],
-            CONNECT: [CallbackQueryHandler(connect_handler)],
-            MY_ACCOUNT: [CallbackQueryHandler(my_account_handler, pattern='^(edit|kembali)$')],
+            EDIT_CHOICE: [CallbackQueryHandler(edit_choice_handler, pattern='^(edit_name|edit_child_name|edit_relationship|edit_id_sabuk|edit_gender|edit_emergency_contact|batal|cancel)$')],
+            CONNECT: [CallbackQueryHandler(connect_handler)],  
+            MY_ACCOUNT: [CallbackQueryHandler(my_account_handler, pattern='^(edit_name|edit_child_name|edit_relationship|edit_id_sabuk|edit_gender|edit_emergency_contact|kembali)$')],
         },
         fallbacks=[CommandHandler('cancel', cancel)]
     )
 
     app.add_handler(CommandHandler('start', start_command))
     app.add_handler(CommandHandler('connect', connect_command))
-    app.add_handler(CommandHandler('contactlist', contactlist_command)) 
+    app.add_handler(CommandHandler('contactlist', contactlist_command))
+    app.add_handler(CommandHandler('emergency', emergency_contact_received))
     app.add_handler(CommandHandler('myaccount', my_account_command))
     app.add_handler(CommandHandler('help', help_command))
     app.add_handler(conv_handler)
